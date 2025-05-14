@@ -1,0 +1,37 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.crash
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+terraform.tfstate.backup
+.terraform.lock.hcl
+
+# Packer
+packer_cache/
+*.pkr.hcl.lock
+*.pkrvars.hcl
+setup-debug.log
+
+# User data scripts
+*.log
+*.zip
+*.bak
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDEs/editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Credentials
+*.pem
+*.key
+.aws/
