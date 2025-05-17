@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        DOCKERHUB_IMAGE = 'joanna2/web-app:latest'
+        ECR_REPO = '586794450782.dkr.ecr.us-east-1.amazonaws.com/web-app'
+    ECR_IMAGE = "${ECR_REPO}:latest"
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+        stage('Build and Push Docker Image') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-creds',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    ),
+                    usernamePassword(
+                        credentialsId: 'aws-cred',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    sh '''
+                        echo "Building Docker image..."
+                        docker build -t $DOCKERHUB_IMAGE -t $ECR_IMAGE .
+
+                        echo "Logging in to Docker Hub..."
+                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+                        echo "Pushing image to Docker Hub..."
+                        docker push $DOCKERHUB_IMAGE
+
+                        echo "Logging in to AWS ECR..."
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+                        aws configure set default.region $AWS_DEFAULT_REGION
+
+                        aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO
+
+                        echo "Pushing image to AWS ECR..."
+                        docker push $ECR_IMAGE
+
+                        echo "Cleaning up local images..."
+                        docker rmi $DOCKERHUB_IMAGE $ECR_IMAGE || true
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy with Helm') {
+            when {
+                expression {
+                    env.GIT_BRANCH == 'origin/main' || env.GIT_BRANCH == 'origin/develop'
+                }
+            }
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'aws-cred',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    )
+                ]) {
+                    sh '''
+                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+
+                        echo "Configuring access to EKS..."
+                        aws eks --region ${AWS_DEFAULT_REGION} update-kubeconfig --name my-eks-cluster
+
+                        echo "Deploying to EKS with Helm..."
+                        helm upgrade --install my-webapp ./webapp --namespace default --set image.repository=$ECR_REPO,image.tag=latest
+                    '''
+                }
+            }
+        }
+    }
+}
