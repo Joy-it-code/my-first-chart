@@ -306,6 +306,7 @@ packer build packer.pkr.hcl
 ![](./img/2a.ami.packer.png)
 
 
+
 ### Create .gitignore
 
 Create a .gitignore file in the root of your project:
@@ -661,6 +662,9 @@ terraform apply
 + Test Jenkins by checking the service:
 ```
 sudo systemctl status jenkins
+docker ps
+helm version
+kubectl version --client
 ```
 
 + Open your web browser and go to:
@@ -675,13 +679,17 @@ http://<JENKINS_PUBLIC_IP>:8080
 ```
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
-
 + Paste it into the Jenkins UI (browser)
 
 + Choose “Install suggested plugins”
 
 + Create admin user (or skip)
 
+![](./img/3a.admin.password.png)
+![](./img/2b.admin.pswd.png)
+![](./img/3b.install.sugestion.png)
+![](./img/3c.users.png)
+![](./img/3d.jenkins.startup.png)
 
 
 ## Install Plugins
@@ -695,17 +703,17 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 + Pipeline Plugin (for CI/CD automation)
 
-+ Docker Pipeline Plugin (if using Docker)
-
 + Docker Commons
 
 + Kubernetes CLI Plugin (for Helm & Kubernetes)
 
-+ Kubernetes Credentials Plugin
-
 + Helm Plugin (for Helm chart deployments)
 
 + Credentials Binding Plugin (for secure credentials management)
+![](./img/3e.installation.png)
+![](./img/3f.installatn2.png)
+![](./img/3g,git.installn.png)
+![](./img/3h.pipeline.installn.png)
 
 
 ### Restart Jenkins after installing plugins:
@@ -721,12 +729,22 @@ sudo systemctl restart jenkins
 
 + Create a new admin user.
 
-+ Disable "Allow anonymous read access."
-
++ Disable "Allow anonymous read access.                                                                 
 + Save your changes.
 
+![](./img/4a.restrict.access.png)
 
 
+
+### Fine-tuning Jenkins permissions for better security
+
++ Enable matrix-based security
++ Administrator (account) → Full access
++ Logged-in Users → Read & View permissions
++ Anonymous Users → No access (Best for security!), Click Save.
+ ![](./img/4b.security.pratice.png)
+
+ 
 ### Create Jenkins Credentials
 
 Go to: Manage Jenkins → Credentials → (Global) → Add Credentials
@@ -756,11 +774,14 @@ Password	:  your DockerHub password
 
 + Click OK
 
-🔹Configure the Pipeline
+
+
+### 🔹Configure the Pipeline
 
 **General Section:**
 
 **GitHub Project:** https://github.com/your-username/your-repo
+
 
 **Pipeline Section:**
 **Choose:**
@@ -793,15 +814,76 @@ Watch console output for stages:
 
 
 
-## Step 2: Learn Helm (The Magical Toy Box)
+## Create Dockerfile For a React App (Static Build)
+```
+nano Dockerfile 
+```
 
-Helm is like a magic recipe book. It tells Kubernetes (the toy warehouse) exactly how to build and pack your app.
+**Paste**
+```
+# Use Nginx as the base image
+FROM nginx:stable
 
-#### What is a Helm Chart?
+# Copy your web app files into the Nginx HTML directory
+COPY . /usr/share/nginx/html
 
-A chart is a collection of files that describe how to run your app.
+# Expose port 80
+EXPOSE 80
 
-Think of it like a box of instructions, toy pieces, and decorations.
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+## Create .dockerignore File
+
+**Paste**
+```
+*.tar
+*.zip
+*.log
+node_modules
+.vscode
+.git
+*.lz4
+```
+
+### On The Instance Run:
+```
+docker login -u username -p password
+docker build -t <your-dockerhub-username>/<your-image-name>:<tag> .
+docker push <your-dockerhub-username>/<your-image-name>:<tag> 
+```
+
+
+## Step 2: What are Helm Charts?
+
+### What is Helm?
+Helm is a package manager for Kubernetes, similar to apt for Ubuntu or yum for CentOS.
+
++ It helps to define, install, and manage Kubernetes applications.
+
++ Helm uses charts — packages of pre-configured Kubernetes resources.
+
+
+
+### What is a Helm Chart?
+A Helm chart is a collection of files that describe a related set of Kubernetes resources.
+
+
+### Why Use Helm Charts?
+
++ Simplifies deployment with one command: 
+```
+helm install
+helm version
+```
+
++ Reusable and customizable
+
++ Supports configuration with values files
+
++ Manages app lifecycle (upgrade, rollback, uninstall)                                                                                                                                   
+
 
 ###  Create First Helm Chart
 
@@ -810,28 +892,95 @@ Install and Verify Helm
 helm version
 ```
 
-## App Code — app/
+```
+helm create my-first-chart
+cd my-first-chart
+```
+#### This creates:
 
-**🔹 app/index.html**
+**Chart.yaml:** chart metadata
+
+**values.yaml:** configurable app values (e.g., image name)
+
+**templates/:** deployment and service YAMLs
+
+
+### Simplify the contents.
+
++ Update values.yaml
+
+Edit the image to use Nginx:
 ```
-<!DOCTYPE html>
-<html>
-  <head><title>Helm App</title></head>
-  <body><h1>Hello from Jenkins + Helm!</h1></body>
-</html>
+image:
+  repository: nginx
+  pullPolicy: IfNotPresent
+  tag: latest
+
+replicaCount: 1
 ```
 
-## 🔹 app/Dockerfile
+### Edit templates/deployment.yaml
+Reference the values properly:
+```
+spec:
+  replicas: {{ .Values.replicaCount }}
+  template:
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+```
 
-**dockerfile**
+### Add a simple Service
+
+**templates/service.yaml**
 ```
-FROM nginx:alpine
-COPY index.html /usr/share/nginx/html/index.html
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "my-first-chart.fullname" . }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app.kubernetes.io/name: {{ include "mywebapp.name" . }}
 ```
+
+
+### helm-chart/templates/deployment.yaml
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "web-app.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "web-app.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "web-app.name" . }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: 80
+```
+
+
 
 ## Helm Chart — helm-chart/
 
-Run helm create helm-chart and then replace these files:
+**Run** 
+```
+helm create helm-chart
+```
+then replace these files:
 
 ### 🔹 helm-chart/Chart.yaml
 ```
