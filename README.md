@@ -794,7 +794,33 @@ Password	:  your DockerHub password
 
 Click Save.
 
+
+
+
+### Enable Webhooks in Your GitHub Repository
++ Go to your GitHub repository → Click Settings → Webhooks.
+
++ Click Add webhook.
+
++ In the Payload URL, enter:
+```
+http://your-jenkins-server/github-webhook/
+```
++ Replace your-jenkins-server with your actual Jenkins URL.
+
++ Choose application/json as the content type.
+
++ Under Events, select:
+
++ Push events 
+
++ You can also select pull requests or custom triggers.
+
++ Click Save.
+
+
 ## Create Jenkinsfile
+
 **Paste**
 ```
 pipeline {
@@ -816,7 +842,7 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'dockerhub-creds',
+                        credentialsId: 'docker-hub-token',
                         usernameVariable: 'DOCKER_USERNAME',
                         passwordVariable: 'DOCKER_PASSWORD'
                     ),
@@ -885,21 +911,6 @@ pipeline {
 ```
 
 
-### 🔹Run the Pipeline
-
-On Push to Github
-
-Watch console output for stages:
-
-+ Checkout
-
-+ Build Docker image
-
-+ Push to DockerHub
-
-+ Deploy with Helm
-
-
 
 ## Create Dockerfile For a React App (Static Build)
 ```
@@ -936,9 +947,57 @@ node_modules
 
 ### On The Instance Run:
 ```
+nano Dockerfile
+```
+
+**Paste**
+```
+# Use Nginx as the base image
+FROM nginx:stable
+
+# Copy your web app files into the Nginx HTML directory
+COPY . /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+```
 docker login -u username -p password
 docker build -t <your-dockerhub-username>/<your-image-name>:<tag> .
 docker push <your-dockerhub-username>/<your-image-name>:<tag> 
+```
+
+
+### Generate a Docker Hub Access Token
++ Sign in to Docker Hub 
++ Click on Personal Access Tokens
++ Generate new token
+
+### Use the Token in Jenkins
+
+Store the Token Securely in Jenkins:
+
++ Go to Jenkins Dashboard → Manage Jenkins → Manage Credentials
+
++ Click Global Credentials → Add Credentials
+
++ Select Username and Password
+
++ Enter your Docker Hub username as the username
+
++ Paste the access token as the password
+
++ Save it with an ID like docker-hub-token
+
+
+
+### Update kubeconfig:
+```
+aws eks --region us-east-1 update-kubeconfig --name capstone-eks
 ```
 
 
@@ -950,7 +1009,6 @@ Helm is a package manager for Kubernetes, similar to apt for Ubuntu or yum for C
 + It helps to define, install, and manage Kubernetes applications.
 
 + Helm uses charts — packages of pre-configured Kubernetes resources.
-
 
 
 ### What is a Helm Chart?
@@ -971,7 +1029,6 @@ helm version
 
 + Manages app lifecycle (upgrade, rollback, uninstall)                                                                                                                                   
 
-
 ###  Create First Helm Chart
 
 Install and Verify Helm 
@@ -990,6 +1047,35 @@ cd my-first-chart
 **values.yaml:** configurable app values (e.g., image name)
 
 **templates/:** deployment and service YAMLs
+
+
+
+## Step 3: Modify the Chart for a Sample App (like NGINX)
+**Edit values.yaml:**
+```
+replicaCount: 2
+
+image:
+  repository: nginx
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 80
+
+ingress:
+  enabled: false
+```
+**This configures the app to deploy 2 NGINX pods and expose them via NodePort.**
+
+
+
+## Deploy the app:
+```
+helm install my-web-app ./my-first-chart
+```
+
 
 
 ### Simplify the contents.
@@ -1062,6 +1148,8 @@ spec:
 
 
 ## Helm Chart — helm-chart/
+
+
 
 **Run** 
 ```
@@ -1136,41 +1224,18 @@ spec:
     app: {{ include "web-app.name" . }}
 ```
 
-## Jenkins Pipeline — jenkins-pipeline/Jenkinsfile
-```
-pipeline {
-  agent any
-  environment {
-    DOCKER_IMAGE = "devstudent/web-app:latest"
-  }
-  stages {
-    stage('Checkout Code') {
-      steps {
-        git 'https://github.com/your-username/your-repo'
-      }
-    }
 
-    stage('Build Image') {
-      steps {
-        sh 'docker build -t $DOCKER_IMAGE ./app'
-      }
-    }
 
-    stage('Push to DockerHub') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-          sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-          sh 'docker push $DOCKER_IMAGE'
-        }
-      }
-    }
+### 🔹Run the Pipeline
 
-    stage('Deploy to EKS with Helm') {
-      steps {
-        sh 'helm upgrade --install web-app ./helm-chart --set image.repository=devstudent/web-app --set image.tag=latest'
-      }
-    }
-  }
-}
-``` 
+On Push to Github
 
+Watch console output for stages:
+
++ Checkout
+
++ Build Docker image
+
++ Push to DockerHub
+
++ Deploy with Helm
