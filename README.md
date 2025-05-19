@@ -638,12 +638,47 @@ systemctl restart jenkins
 ```
 
 
+
 ### Make the Shell Script Executable
 In your terminal, navigate to the root of your Terraform project, then run:
 ```
 chmod +x jenkins/install_jenkins.sh
 ```
 
+### Create-kubeconfig.sh:
+**Paste**
+
+```
+#!/bin/bash
+
+CLUSTER_NAME="capstone-eks"
+REGION="us-east-1"
+
+echo "Setting up kubeconfig for EKS cluster: $CLUSTER_NAME"
+
+aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
+
+if [ $? -eq 0 ]; then
+  echo "✅ Kubeconfig set successfully."
+else
+  echo "❌ Failed to set kubeconfig."
+  exit 1
+fi
+```
+
+### Make it executable:
+
+```
+chmod +x create-kubeconfig.sh
+./create-kubeconfig.sh
+```
+
+### On Terminal:
+**Run**
+```
+aws eks --region us-east-1 update-kubeconfig --name capstone-eks
+
+```
 
 
 ### Initialize and Apply
@@ -971,6 +1006,28 @@ docker build -t <your-dockerhub-username>/<your-image-name>:<tag> .
 docker push <your-dockerhub-username>/<your-image-name>:<tag> 
 ```
 
+## Authenticate Docker to Your ECR Registry
+
+Command
+```
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <your-account-id>.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### Tag Your Docker Image for ECR
+```
+joanna2/my-webapp:latest
+```
+
+### Retag it for ECR:
+```
+docker tag joanna2/my-webapp:latest <your-account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
+```
+
+### Then push the image
+
+### Deploy Docker Image to EKS
+
+
 
 ### Generate a Docker Hub Access Token
 + Sign in to Docker Hub 
@@ -1050,22 +1107,17 @@ cd my-first-chart
 
 
 
-## Step 3: Modify the Chart for a Sample App (like NGINX)
+## Step 3: Modify the Chart for a Sample App 
 **Edit values.yaml:**
 ```
-replicaCount: 2
-
 image:
-  repository: nginx
-  tag: latest
+  repository: <account.id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp
   pullPolicy: IfNotPresent
+  tag: "latest"
 
 service:
-  type: NodePort
+  type: LoadBalancer
   port: 80
-
-ingress:
-  enabled: false
 ```
 **This configures the app to deploy 2 NGINX pods and expose them via NodePort.**
 
@@ -1077,31 +1129,10 @@ helm install my-web-app ./my-first-chart
 ```
 
 
-
-### Simplify the contents.
-
-+ Update values.yaml
-
-Edit the image to use Nginx:
-```
-image:
-  repository: nginx
-  pullPolicy: IfNotPresent
-  tag: latest
-
-replicaCount: 1
-```
-
 ### Edit templates/deployment.yaml
 Reference the values properly:
 ```
-spec:
-  replicas: {{ .Values.replicaCount }}
-  template:
-    spec:
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
 ```
 
 ### Add a simple Service

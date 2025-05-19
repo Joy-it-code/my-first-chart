@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "my-first-chart.labels" . | nindent 4 }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.service.port }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: http
