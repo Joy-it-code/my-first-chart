@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION  = 'us-east-1'
-        ECR_REPO    = '586794450782.dkr.ecr.us-east-1.amazonaws.com/web-app'
+        ECR_REPO    = '586794450782.dkr.ecr.us-east-1.amazonaws.com/my-webapp'
         ECR_IMAGE   = "${ECR_REPO}:latest"
         CLUSTER_NAME = 'capstone-eks'
     }

@@ -673,223 +673,6 @@ resource "aws_iam_instance_profile" "jenkins_instance_profile" {
 ```
 
 
-
-### Create Jenkins file and directory 
-+ Run
-```
-mkdir -p jenkins
-touch jenkins/configure_jenkins.sh
-```
-
-### Paste
-```
-#!/bin/bash
-
-REGION="us-east-1"
-CLUSTER_NAME="capstone-eks"
-JENKINS_HOME="/var/lib/jenkins"
-JENKINS_USER="jenkins"
-KUBE_DIR="${JENKINS_HOME}/.kube"
-KUBECONFIG_FILE="${KUBE_DIR}/config"
-
-# Update kubeconfig as root
-aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
-
-# Copy kubeconfig to Jenkins user directory
-mkdir -p "$KUBE_DIR"
-cp -i /root/.kube/config "$KUBECONFIG_FILE"
-chown -R "$JENKINS_USER:$JENKINS_USER" "$KUBE_DIR"
-
-# Export KUBECONFIG for Jenkins service
-if ! grep -q "KUBECONFIG=${KUBECONFIG_FILE}" /etc/default/jenkins; then
-  echo "KUBECONFIG=${KUBECONFIG_FILE}" >> /etc/default/jenkins
-fi
-
-# Restart Jenkins to pick up environment change
-systemctl restart jenkins
-```
-
-
-
-### Make the Shell Script Executable
-In your terminal, navigate to the root of your Terraform project, then run:
-```
-chmod +x jenkins/configure_jenkins.sh
-
-```
-
-
-
-### On Terminal:
-**Run**
-```
-aws eks update-kubeconfig --region us-east-1 --name capstone-eks
-kubectl get nodes
-```
-
-
-### Initialize and Apply
-```
-terraform init
-terraform validate
-terraform plan 
-terraform apply 
-```
-
-
-
-
-## Step 2: Open Jenkins Dashboard
-
-+ Restart instance or log out and log back in to apply docker group changes.
-
-
-+ Test Jenkins ec2 by checking the service:
-```
-sudo systemctl status jenkins
-docker ps
-helm version
-kubectl version --client
-aws eks list-clusters
-```
-
-+ Open your web browser and go to:
-```
-http://<JENKINS_PUBLIC_IP>:8080
-```
-
-+ You’ll see a page asking for a secret password.
-
-+ Get it from your terminal:
-
-```
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-```
-+ Paste it into the Jenkins UI (browser)
-
-+ Choose “Install suggested plugins”
-
-+ Create admin user (or skip)
-
-![](./img/3a.admin.password.png)
-![](./img/2b.admin.pswd.png)
-![](./img/3b.install.sugestion.png)
-![](./img/3c.users.png)
-![](./img/3d.jenkins.startup.png)
-
-
-## Install Plugins
-🔹 Install Plugins in Jenkins
-
-+ Go to Manage Jenkins → Plugins → Available Plugins 
-
-+ Search and install these plugins:
-
-+ Git Plugin (for Git integration)
-
-+ Pipeline Plugin (for CI/CD automation)
-
-+ Docker Commons
-
-+ Kubernetes CLI Plugin (for Helm & Kubernetes)
-
-+ Helm Plugin (for Helm chart deployments)
-
-+ Credentials Binding Plugin (for secure credentials management)
-![](./img/3e.installation.png)
-![](./img/3f.installatn2.png)
-![](./img/3g,git.installn.png)
-![](./img/3h.pipeline.installn.png)
-
-
-### Restart Jenkins after installing plugins:
-
-```
-sudo systemctl restart jenkins
-```
-
-
-## Add Basic Security 
-
-+ Go to Manage Jenkins > Configure Global Security
-
-+ Create a new admin user.
-
-+ Disable "Allow anonymous read access.                                                                 
-+ Save your changes.
-
-![](./img/4a.restrict.access.png)
-
-
-
-### Fine-tuning Jenkins permissions for better security
-
-+ Enable matrix-based security
-+ Administrator (account) → Full access
-+ Logged-in Users → Read & View permissions
-+ Anonymous Users → No access (Best for security!), Click Save.
- ![](./img/4b.security.pratice.png)
-
- 
-### Create Jenkins Credentials
-
-### Create and Run Jenkins Pipeline 
-
-🔹Create a Pipeline Job
-
-+ In Jenkins Dashboard, click “New Item”
-
-+ Enter a name like helm-capstone
-
-+ Choose Pipeline
-
-+ Click OK
-
-
-
-### 🔹Configure the Pipeline
-
-
-**Pipeline Section:**
-**Choose:**
-
-**Definition:** Pipeline script from SCM
-
-**SCM**: Git
-
-**Repository URL:** https://github.com/your-username/your-repo.git
-
-**Credentials:** Select github-creds if private
-
-**Script Path:** jenkins-pipeline/Jenkinsfile
-
-Click Save.
-
-
-
-
-### Enable Webhooks in Your GitHub Repository
-+ Go to your GitHub repository → Click Settings → Webhooks.
-
-+ Click Add webhook.
-
-+ In the Payload URL, enter:
-```
-http://your-jenkins-server/github-webhook/
-```
-+ Replace your-jenkins-server with your actual Jenkins URL.
-
-+ Choose application/json as the content type.
-
-+ Under Events, select:
-
-+ Push events 
-
-+ You can also select pull requests or custom triggers.
-
-+ Click Save.
-
-
 ## Create Jenkinsfile
 
 **Paste**
@@ -1009,43 +792,250 @@ node_modules
 *.lz4
 ```
 
-### On The Instance Run:
+
+### Create Jenkins file and directory 
++ Run
 ```
-nano Dockerfile
-```
-
-**Paste**
-```
-# Use Nginx as the base image
-FROM nginx:stable
-
-# Copy your web app files into the Nginx HTML directory
-COPY . /usr/share/nginx/html
-
-# Expose port 80
-EXPOSE 80
-
-# Start Nginx
-CMD ["nginx", "-g", "daemon off;"]
+mkdir -p jenkins
+touch jenkins/configure_jenkins.sh
 ```
 
+### Paste
+```
+#!/bin/bash
 
-##  Use Helm Chart in Jenkins Pipeline
-On Jenkinsfile :
+REGION="us-east-1"
+CLUSTER_NAME="capstone-eks"
+JENKINS_HOME="/var/lib/jenkins"
+JENKINS_USER="jenkins"
+KUBE_DIR="${JENKINS_HOME}/.kube"
+KUBECONFIG_FILE="${KUBE_DIR}/config"
 
-+ Log into AWS ECR
+# Update kubeconfig as root
+aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
 
-+ Builds and pushes image
+# Copy kubeconfig to Jenkins user directory
+mkdir -p "$KUBE_DIR"
+cp -i /root/.kube/config "$KUBECONFIG_FILE"
+chown -R "$JENKINS_USER:$JENKINS_USER" "$KUBE_DIR"
 
-+ Runs Helm upgrade
+# Export KUBECONFIG for Jenkins service
+if ! grep -q "KUBECONFIG=${KUBECONFIG_FILE}" /etc/default/jenkins; then
+  echo "KUBECONFIG=${KUBECONFIG_FILE}" >> /etc/default/jenkins
+fi
 
+# Restart Jenkins to pick up environment change
+systemctl restart jenkins
+```
+
+
+
+### Make the Shell Script Executable
+In your terminal, navigate to the root of your Terraform project, then run:
+```
+chmod +x jenkins/configure_jenkins.sh
 
 ```
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
-docker build -t web-app .
-docker tag web-app:latest <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
-docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest 
+
+
+
+### Initialize and Apply
 ```
+terraform init
+terraform validate
+terraform plan 
+terraform apply 
+```
+
+### On Terminal:
+**Run**
+```
+aws eks update-kubeconfig --region us-east-1 --name capstone-eks
+helm list
+kubectl get nodes
+kubectl get svc
+```
+
+
+## Step 2: Open Jenkins Dashboard
+
++ Verify Installation on Jenkins EC2:
+```
+aws version
+helm version
+kubectl version --client
+docker version
+jenkins version
+sudo systemctl status jenkins
+```
+
+
++ Open your web browser and go to:
+```
+http://<JENKINS_PUBLIC_IP>:8080
+```
+
++ You’ll see a page asking for a secret password.
+
++ Get it from your terminal:
+
+```
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+```
++ Paste it into the Jenkins UI (browser)
+
++ Choose “Install suggested plugins”
+
++ Create admin user (or skip)
+
+![](./img/3a.admin.password.png)
+![](./img/2b.admin.pswd.png)
+![](./img/3b.install.sugestion.png)
+![](./img/3c.users.png)
+![](./img/3d.jenkins.startup.png)
+
+
+## Install Plugins
+🔹 Install Plugins in Jenkins
+
++ Go to Manage Jenkins → Plugins → Available Plugins 
+
++ Search and install these plugins:
+
++ Git Plugin (for Git integration)
+
++ Pipeline Plugin (for CI/CD automation)
+
++ Docker Commons
+
++ Kubernetes CLI Plugin (for Helm & Kubernetes)
+
++ Helm Plugin (for Helm chart deployments)
+
++ AWS Credentials
+
++ Credentials Binding Plugin (for secure credentials management)
+![](./img/3e.installation.png)
+![](./img/3f.installatn2.png)
+![](./img/3g,git.installn.png)
+![](./img/3h.pipeline.installn.png)
+
+
+
+
+### Restart Jenkins after installing plugins:
+
+```
+sudo systemctl restart jenkins
+sudo systemctl status jenkins
+```
+
+
+## Add Basic Security 
+
++ Go to Manage Jenkins > Configure Global Security
+
++ Create a new admin user.
+
++ Disable "Allow anonymous read access.                                                                 
++ Save your changes.
+
+![](./img/4a.restrict.access.png)
+
+
+
+### Fine-tuning Jenkins permissions for better security
+
++ Enable matrix-based security
++ Administrator (account) → Full access
++ Logged-in Users → Read & View permissions
++ Anonymous Users → No access (Best for security!), Click Save.
+ ![](./img/4b.security.pratice.png)
+
+ 
+### Create Jenkins Credentials
+
+### Create and Run Jenkins Pipeline 
+
+🔹Create a Pipeline Job
+
++ In Jenkins Dashboard, click “New Item”
+
++ Enter a name like helm-capstone
+
++ Choose Pipeline
+
++ Click OK
+
+
+
+### 🔹Configure the Pipeline
+
+
+**Pipeline Section:**
+**Choose:**
+
+**Definition:** Pipeline script from SCM
+
+**SCM**: Git
+
+**Repository URL:** https://github.com/your-username/your-repo.git
+
+**Credentials:** Select github-cred if private
+
+**Script Path:** Jenkinsfile
+
+Click Save.
+
+
+
+
+### Enable Webhooks in Your GitHub Repository
++ Go to your GitHub repository → Click Settings → Webhooks.
+
++ Click Add webhook.
+
++ In the Payload URL, enter:
+```
+http://your-jenkins-server/github-webhook/
+```
++ Replace your-jenkins-server with your actual Jenkins URL.
+
++ Choose application/json as the content type.
+
++ Under Events, select:
+
++ Push events 
+
++ You can also select pull requests or custom triggers.
+
++ Click Save.
+
+
+
+## On Terminal
+
+**Edit ConfigMap Run:**
+```
+export KUBE_EDITOR=nano
+kubectl edit configmap aws-auth -n kube-system
+```
+
+**Add Jenkins Role**
+```
+    - rolearn: arn:aws:iam::<account-id>:role/jenkins-role-name
+      username: jenkins
+      groups:
+        - system:masters
+```
+
+### To Confirm Role 
+run
+```
+kubectl -n kube-system get configmap aws-auth -o yaml
+```
+
+
 
 
 
@@ -1163,6 +1153,50 @@ spec:
     - port: {{ .Values.service.port }}
       targetPort: 80
 ```
+
+
+
+### On The Instance Run:
+run
+```
+nano Dockerfile
+```
+
+**Paste**
+```
+# Use Nginx as the base image
+FROM nginx:stable
+
+# Copy your web app files into the Nginx HTML directory
+COPY . /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### Use Helm Chart in Jenkins Pipeline
+On Jenkinsfile :
+
++ Log into AWS ECR
+
++ Builds and pushes image
+
++ Runs Helm upgrade
+
+
+```
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
+docker build -t web-app .
+docker tag web-app:latest <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
+docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest 
+```
+
+
+
+
 
 
 ## Step 3: Deploying the App with Helm
