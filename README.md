@@ -135,6 +135,7 @@ cd my-first-chart
 ```
 
 
+
 ## Install Packer on Windows
 ```
 choco install packer
@@ -180,7 +181,7 @@ sudo apt-get install jenkins -y
 sudo chown -R jenkins:jenkins /var/lib/jenkins
 sudo systemctl enable jenkins
 sudo systemctl start jenkins
-sudo systemctl status jenkins || { echo "❌ Jenkins failed to start!"; exit 1; }
+sudo systemctl status jenkins || { echo "Jenkins failed to start!"; exit 1; }
 
 # 3. Docker
 echo "Installing Docker..."
@@ -194,7 +195,7 @@ echo \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt-get update
 sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-docker --version || { echo "❌ Docker installation failed!"; exit 1; }
+docker --version || { echo " Docker installation failed!"; exit 1; }
 
 sudo usermod -aG docker ubuntu
 sudo usermod -aG docker jenkins
@@ -214,7 +215,7 @@ curl -LO https://get.helm.sh/helm-v3.14.2-linux-amd64.tar.gz
 tar -zxvf helm-v3.14.2-linux-amd64.tar.gz
 sudo install -m 755 linux-amd64/helm /usr/local/bin/helm
 rm -rf linux-amd64 helm-v3.14.2-linux-amd64.tar.gz
-helm version || { echo "❌ Helm installation failed!"; exit 1; }
+helm version || { echo " Helm installation failed!"; exit 1; }
 
 # 6. Kubectl
 echo "Installing kubectl..."
@@ -222,7 +223,7 @@ curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 kubectl version --client
 
-echo "✅ Jenkins + Docker + Helm + kubectl are installed"
+echo "Jenkins + Docker + Helm + kubectl are installed"
 ```
 
 + Make it executable:
@@ -302,9 +303,7 @@ packer validate packer.pkr.hcl
 packer build packer.pkr.hcl
 ```
 **go to your AWS Console → EC2 → AMIs to see new AMI ID**
-
-![](./img/2a.ami.packer.png)
-
+![](./img/2.ami.packer.png)
 
 
 ### Create .gitignore
@@ -391,15 +390,45 @@ terraform -v
 ### Create terraform/main.tf
 touch main.tf
 ```
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0"
+    }
+  }
+
+  required_version = ">= 1.3.0"
+}
+
 provider "aws" {
   region = var.region
 }
 
-# 1. Security Group for Jenkins EC2
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.1.1"
+
+  name = "eks-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["us-east-1a", "us-east-1b"]
+  public_subnets  = ["10.0.3.0/24", "10.0.4.0/24"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  tags = {
+    Name        = "eks-vpc"
+    Environment = "dev"
+  }
+}
+
 resource "aws_security_group" "jenkins_sg" {
   name        = "jenkins-sg"
   description = "Allow SSH, HTTP, and Jenkins access"
-  vpc_id      = var.vpc_id
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port   = 22
@@ -434,36 +463,54 @@ resource "aws_security_group" "jenkins_sg" {
   }
 }
 
-# 2. Jenkins EC2 Instance
 resource "aws_instance" "jenkins_server" {
   ami                         = var.ami_id
-  instance_type               = "t2.micro"
+  instance_type               = "t3.medium"
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_instance_profile.name
   key_name                    = var.key_name
   vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
-  subnet_id                   = var.subnet_ids[0]
+  subnet_id                   = module.vpc.public_subnets[0]
   associate_public_ip_address = true
-  iam_instance_profile        = aws_iam_instance_profile.jenkins_instance_profile.name
-  
+
   tags = {
     Name = "JenkinsServer"
   }
 
-  user_data = file("jenkins/install_jenkins.sh")
+user_data = file("jenkins/configure_jenkins.sh")
 }
 
-# 3. ECR Repository
 resource "aws_ecr_repository" "web_app_repo" {
   name = var.ecr_repository_name
 }
 
-# 4. EKS Cluster
 module "eks" {
-  source          = "terraform-aws-modules/eks/aws"
+  source  = "terraform-aws-modules/eks/aws"
+  version = "19.15.3"
+
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
-  subnet_ids      = var.subnet_ids
-  vpc_id          = var.vpc_id
-  enable_irsa     = true
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  cluster_enabled_log_types    = []
+  create_cloudwatch_log_group = false
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = true
+
+  eks_managed_node_groups = {
+    default = {
+      desired_size   = 2
+      max_size       = 3
+      min_size       = 1
+      instance_types = ["t3.medium"]
+    }
+  }
+
+  tags = {
+    Terraform   = "true"
+    Environment = "dev"
+  }
 }
 ```
 
@@ -471,48 +518,51 @@ module "eks" {
 touch variable.tf
 ```
 variable "region" {
-  description = "AWS region to deploy resources in"
+  description = "AWS region to deploy into"
   type        = string
-  default     = "us-east-1"
-}
-
-variable "key_name" {
-  description = "Name of the SSH key pair to use for EC2"
-  type        = string
-}
-
-variable "vpc_id" {
-  description = "VPC ID for the EKS cluster"
-  type        = string
-}
-
-variable "subnet_ids" {
-  description = "List of subnet IDs for the EKS cluster"
-  type        = list(string)
-}
-
-variable "ecr_repository_name" {
-  description = "Name of the ECR repository for the application"
-  type        = string
-  default     = "web-app"
 }
 
 variable "ami_id" {
-  description = "AMI ID for Jenkins EC2 instance"
+  description = "AMI for Jenkins EC2"
   type        = string
-  default     = "ami-084568db4383264d4"
+}
+
+variable "key_name" {
+  description = "SSH Key for EC2"
+  type        = string
+}
+
+variable "ecr_repository_name" {
+  description = "Name of ECR repository"
+  type        = string
 }
 
 variable "cluster_name" {
-  description = "Name of the EKS cluster"
+  description = "EKS cluster name"
   type        = string
-  default     = "capstone-eks"
 }
 
 variable "cluster_version" {
-  description = "Kubernetes version for EKS"
+  description = "EKS cluster version"
   type        = string
-  default     = "1.24"
+}
+
+variable "jenkins_iam_role_name" {
+  description = "IAM role name for Jenkins EC2"
+  type        = string
+  default     = "jenkins-ec2-role"
+}
+
+variable "jenkins_policy_name" {
+  description = "IAM policy name for Jenkins EC2"
+  type        = string
+  default     = "jenkins-ec2-policy"
+}
+
+variable "jenkins_instance_profile_name" {
+  description = "Instance profile name for Jenkins EC2"
+  type        = string
+  default     = "jenkins-instance-profile"
 }
 ```
 
@@ -529,9 +579,12 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.web_app_repo.repository_url
 }
 
-output "eks_cluster_name" {
-  description = "Name of the EKS cluster"
-  value       = module.eks.cluster_name
+output "cluster_name" {
+  value = module.eks.cluster_name
+}
+
+output "kubeconfig_command" {
+  value = "aws eks --region us-east-1 update-kubeconfig --name ${module.eks.cluster_name}"
 }
 ```
 
@@ -540,16 +593,16 @@ output "eks_cluster_name" {
 touch terraform.tfvars
 ```
 region                        = "us-east-1"
-key_name                      = "main-key"
-vpc_id                        = "vpc-0b75f6b3ee6f897f4"
-subnet_ids                    = ["subnet-0cadb9f6fe9ad4229", "subnet-05f028de633ab9751"]
+key_name                      = "your-key-pair"               
+ami_id                        = "ami-xxxxxxxxx"  
+
 ecr_repository_name           = "web-app"
-ami_id                        = "ami-0db41b90cf6b1bf25"
 cluster_name                  = "capstone-eks"
 cluster_version               = "1.29"
 jenkins_iam_role_name         = "jenkins-ec2-role"
 jenkins_policy_name           = "jenkins-ec2-policy"
 jenkins_instance_profile_name = "jenkins-instance-profile"
+
 ```
 
 ----
@@ -563,57 +616,59 @@ touch iam.tf
 
 **Paste**
 ```
-resource "aws_iam_role" "jenkins_ec2_role" {
-  name = "jenkins-ec2-role"
+# IAM role and policy for Jenkins EC2
+resource "aws_iam_role" "jenkins_role" {
+  name = var.jenkins_iam_role_name
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Action = "sts:AssumeRole"
+        Effect = "Allow",
         Principal = {
           Service = "ec2.amazonaws.com"
-        }
-        Effect = "Allow"
-        Sid    = ""
+        },
+        Action = "sts:AssumeRole"
       }
     ]
   })
 }
 
-resource "aws_iam_policy" "jenkins_policy" {
-  name        = "jenkins-ec2-policy"
-  description = "Policy to allow EKS, S3, and CloudWatch access"
+resource "aws_iam_role_policy" "jenkins_policy" {
+  name = var.jenkins_policy_name
+  role = aws_iam_role.jenkins_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "eks:DescribeCluster",
           "eks:ListClusters",
           "eks:DescribeNodegroup",
-          "eks:ListNodegroups",
-          "sts:GetCallerIdentity",
-          "cloudwatch:*",
-          "logs:*",
-          "s3:*"
-        ]
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "cloudwatch:*"
+        ],
         Resource = "*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_role_policy_attach" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_policy.arn
-}
-
 resource "aws_iam_instance_profile" "jenkins_instance_profile" {
-  name = "jenkins-instance-profile"
-  role = aws_iam_role.jenkins_ec2_role.name
+  name = var.jenkins_instance_profile_name
+  role = aws_iam_role.jenkins_role.name
 }
 ```
 
@@ -623,17 +678,34 @@ resource "aws_iam_instance_profile" "jenkins_instance_profile" {
 + Run
 ```
 mkdir -p jenkins
-touch jenkins/install_jenkins.sh
+touch jenkins/configure_jenkins.sh
 ```
 
 ### Paste
 ```
 #!/bin/bash
-export HOME=/home/ubuntu
-aws eks update-kubeconfig --region us-east-1 --name capstone-eks
-cp -r ~/.kube /var/lib/jenkins/
-chown -R jenkins:jenkins /var/lib/jenkins/.kube
-echo "KUBECONFIG=/var/lib/jenkins/.kube/config" >> /etc/default/jenkins
+
+REGION="us-east-1"
+CLUSTER_NAME="capstone-eks"
+JENKINS_HOME="/var/lib/jenkins"
+JENKINS_USER="jenkins"
+KUBE_DIR="${JENKINS_HOME}/.kube"
+KUBECONFIG_FILE="${KUBE_DIR}/config"
+
+# Update kubeconfig as root
+aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
+
+# Copy kubeconfig to Jenkins user directory
+mkdir -p "$KUBE_DIR"
+cp -i /root/.kube/config "$KUBECONFIG_FILE"
+chown -R "$JENKINS_USER:$JENKINS_USER" "$KUBE_DIR"
+
+# Export KUBECONFIG for Jenkins service
+if ! grep -q "KUBECONFIG=${KUBECONFIG_FILE}" /etc/default/jenkins; then
+  echo "KUBECONFIG=${KUBECONFIG_FILE}" >> /etc/default/jenkins
+fi
+
+# Restart Jenkins to pick up environment change
 systemctl restart jenkins
 ```
 
@@ -642,42 +714,17 @@ systemctl restart jenkins
 ### Make the Shell Script Executable
 In your terminal, navigate to the root of your Terraform project, then run:
 ```
-chmod +x jenkins/install_jenkins.sh
-```
-
-### Create-kubeconfig.sh:
-**Paste**
+chmod +x jenkins/configure_jenkins.sh
 
 ```
-#!/bin/bash
 
-CLUSTER_NAME="capstone-eks"
-REGION="us-east-1"
 
-echo "Setting up kubeconfig for EKS cluster: $CLUSTER_NAME"
-
-aws eks update-kubeconfig --name $CLUSTER_NAME --region $REGION
-
-if [ $? -eq 0 ]; then
-  echo "✅ Kubeconfig set successfully."
-else
-  echo "❌ Failed to set kubeconfig."
-  exit 1
-fi
-```
-
-### Make it executable:
-
-```
-chmod +x create-kubeconfig.sh
-./create-kubeconfig.sh
-```
 
 ### On Terminal:
 **Run**
 ```
-aws eks --region us-east-1 update-kubeconfig --name capstone-eks
-
+aws eks update-kubeconfig --region us-east-1 --name capstone-eks
+kubectl get nodes
 ```
 
 
@@ -690,16 +737,20 @@ terraform apply
 ```
 
 
+
+
 ## Step 2: Open Jenkins Dashboard
 
 + Restart instance or log out and log back in to apply docker group changes.
 
-+ Test Jenkins by checking the service:
+
++ Test Jenkins ec2 by checking the service:
 ```
 sudo systemctl status jenkins
 docker ps
 helm version
 kubectl version --client
+aws eks list-clusters
 ```
 
 + Open your web browser and go to:
@@ -730,9 +781,9 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ## Install Plugins
 🔹 Install Plugins in Jenkins
 
-1️⃣ Go to Manage Jenkins → Plugins → Available Plugins 
++ Go to Manage Jenkins → Plugins → Available Plugins 
 
-2️⃣ Search and install these plugins:
++ Search and install these plugins:
 
 + Git Plugin (for Git integration)
 
@@ -781,21 +832,6 @@ sudo systemctl restart jenkins
 
  
 ### Create Jenkins Credentials
-
-Go to: Manage Jenkins → Credentials → (Global) → Add Credentials
-
-🔹 DockerHub Credentials
-
-**Field**      **Value**
-
-Type      :   Username with Password
-
-ID	      :  dockerhub-creds
-
-Username	:  your DockerHub username
-
-Password	:  your DockerHub password
-
 
 ### Create and Run Jenkins Pipeline 
 
@@ -862,10 +898,10 @@ pipeline {
     agent any
 
     environment {
-        AWS_DEFAULT_REGION = 'us-east-1'
-        DOCKERHUB_IMAGE = 'joanna2/web-app:latest'
-        ECR_REPO = '586794450782.dkr.ecr.us-east-1.amazonaws.com/web-app'
-    ECR_IMAGE = "${ECR_REPO}:latest"
+        AWS_REGION  = 'us-east-1'
+        ECR_REPO    = '<account-id>.dkr.ecr.us-east-1.amazonaws.com/web-app'
+        ECR_IMAGE   = "${ECR_REPO}:latest"
+        CLUSTER_NAME = 'capstone-eks'
     }
 
     triggers {
@@ -873,52 +909,40 @@ pipeline {
     }
 
     stages {
-        stage('Build and Push Docker Image') {
+        stage('Build and Push to ECR') {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'docker-hub-token',
-                        usernameVariable: 'DOCKER_USERNAME',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    ),
-                    usernamePassword(
-                        credentialsId: 'aws-cred',
+                        credentialsId: 'aws-cred', 
                         usernameVariable: 'AWS_ACCESS_KEY_ID',
                         passwordVariable: 'AWS_SECRET_ACCESS_KEY'
                     )
                 ]) {
                     sh '''
-                        echo "Building Docker image..."
-                        docker build -t $DOCKERHUB_IMAGE -t $ECR_IMAGE .
-
-                        echo "Logging in to Docker Hub..."
-                        echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
-
-                        echo "Pushing image to Docker Hub..."
-                        docker push $DOCKERHUB_IMAGE
-
-                        echo "Logging in to AWS ECR..."
+                        echo "Logging into AWS..."
                         aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
                         aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-                        aws configure set default.region $AWS_DEFAULT_REGION
+                        aws configure set default.region $AWS_REGION
 
-                        aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO
+                        echo "Logging into Amazon ECR..."
+                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
 
-                        echo "Pushing image to AWS ECR..."
+                        echo "Building Docker image..."
+                        docker build -t $ECR_IMAGE .
+
+                        echo "Pushing Docker image to ECR..."
                         docker push $ECR_IMAGE
 
                         echo "Cleaning up local images..."
-                        docker rmi $DOCKERHUB_IMAGE $ECR_IMAGE || true
+                        docker rmi $ECR_IMAGE || true
                     '''
                 }
             }
         }
 
-        stage('Deploy with Helm') {
+        stage('Deploy with Helm to EKS') {
             when {
-                expression {
-                    env.GIT_BRANCH == 'origin/main' || env.GIT_BRANCH == 'origin/develop'
-                }
+                branch 'main'
             }
             steps {
                 withCredentials([
@@ -929,14 +953,19 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-                        export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                        echo "Configuring AWS CLI for Helm..."
+                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+                        aws configure set default.region $AWS_REGION
 
-                        echo "Configuring access to EKS..."
-                        aws eks --region ${AWS_DEFAULT_REGION} update-kubeconfig --name my-eks-cluster
+                        echo "Updating kubeconfig for EKS..."
+                        aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME
 
-                        echo "Deploying to EKS with Helm..."
-                        helm upgrade --install my-webapp ./webapp --namespace default --set image.repository=$ECR_REPO,image.tag=latest
+                        echo "Deploying with Helm..."
+                        helm upgrade --install web-app ./helm/web-app \
+                            --namespace default \
+                            --set image.repository=$ECR_REPO \
+                            --set image.tag=latest
                     '''
                 }
             }
@@ -947,7 +976,7 @@ pipeline {
 
 
 
-## Create Dockerfile For a React App (Static Build)
+## Create Dockerfile
 ```
 nano Dockerfile 
 ```
@@ -1000,81 +1029,41 @@ EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
 ```
 
-```
-docker login -u username -p password
-docker build -t <your-dockerhub-username>/<your-image-name>:<tag> .
-docker push <your-dockerhub-username>/<your-image-name>:<tag> 
-```
 
-## Authenticate Docker to Your ECR Registry
+##  Use Helm Chart in Jenkins Pipeline
+On Jenkinsfile :
 
-Command
-```
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <your-account-id>.dkr.ecr.us-east-1.amazonaws.com
-```
++ Log into AWS ECR
 
-### Tag Your Docker Image for ECR
-```
-joanna2/my-webapp:latest
-```
++ Builds and pushes image
 
-### Retag it for ECR:
++ Runs Helm upgrade
+
+
 ```
-docker tag joanna2/my-webapp:latest <your-account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
+docker build -t web-app .
+docker tag web-app:latest <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
+docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest 
 ```
 
-### Then push the image
-
-### Deploy Docker Image to EKS
-
-
-
-### Generate a Docker Hub Access Token
-+ Sign in to Docker Hub 
-+ Click on Personal Access Tokens
-+ Generate new token
-
-### Use the Token in Jenkins
-
-Store the Token Securely in Jenkins:
-
-+ Go to Jenkins Dashboard → Manage Jenkins → Manage Credentials
-
-+ Click Global Credentials → Add Credentials
-
-+ Select Username and Password
-
-+ Enter your Docker Hub username as the username
-
-+ Paste the access token as the password
-
-+ Save it with an ID like docker-hub-token
-
-
-
-### Update kubeconfig:
-```
-aws eks --region us-east-1 update-kubeconfig --name capstone-eks
-```
 
 
 ## Step 2: What are Helm Charts?
 
 ### What is Helm?
-Helm is a package manager for Kubernetes, similar to apt for Ubuntu or yum for CentOS.
+Helm is a package manager for Kubernetes, like apt for Ubuntu or yum for CentOS. Helm lets you define, install, and upgrade Kubernetes applications using charts.
 
-+ It helps to define, install, and manage Kubernetes applications.
 
-+ Helm uses charts — packages of pre-configured Kubernetes resources.
 
 
 ### What is a Helm Chart?
-A Helm chart is a collection of files that describe a related set of Kubernetes resources.
+A Helm chart is a collection of YAML templates that describe a set of Kubernetes resources.
 
 
 ### Why Use Helm Charts?
 
-+ Simplifies deployment with one command: 
++ It Simplifies deployment with one command: 
 ```
 helm install
 helm version
@@ -1084,20 +1073,16 @@ helm version
 
 + Supports configuration with values files
 
-+ Manages app lifecycle (upgrade, rollback, uninstall)                                                                                                                                   
++ Manages app lifecycle (upgrade, rollback, uninstall)                                                                                  
 
-###  Create First Helm Chart
-
-Install and Verify Helm 
-```
-helm version
-```
-
+### Creating a Basic Helm Chart
 ```
 helm create my-first-chart
 cd my-first-chart
 ```
-#### This creates:
+
+
+### This creates folders like:
 
 **Chart.yaml:** chart metadata
 
@@ -1107,102 +1092,25 @@ cd my-first-chart
 
 
 
-## Step 3: Modify the Chart for a Sample App 
-**Edit values.yaml:**
-```
-image:
-  repository: <account.id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp
-  pullPolicy: IfNotPresent
-  tag: "latest"
+## Edit the Chart and Update the Following
 
-service:
-  type: LoadBalancer
-  port: 80
-```
-**This configures the app to deploy 2 NGINX pods and expose them via NodePort.**
-
-
-
-## Deploy the app:
-```
-helm install my-web-app ./my-first-chart
-```
-
-
-### Edit templates/deployment.yaml
-Reference the values properly:
-```
-image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-```
-
-### Add a simple Service
-
-**templates/service.yaml**
-```
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "my-first-chart.fullname" . }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: 80
-  selector:
-    app.kubernetes.io/name: {{ include "mywebapp.name" . }}
-```
-
-
-### helm-chart/templates/deployment.yaml
-```
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "web-app.fullname" . }}
-spec:
-  replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      app: {{ include "web-app.name" . }}
-  template:
-    metadata:
-      labels:
-        app: {{ include "web-app.name" . }}
-    spec:
-      containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          ports:
-            - containerPort: 80
-```
-
-
-
-## Helm Chart — helm-chart/
-
-
-
-**Run** 
-```
-helm create helm-chart
-```
-then replace these files:
-
-### 🔹 helm-chart/Chart.yaml
+**Chart.yaml**
 ```
 apiVersion: v2
-name: web-app
-description: A Helm chart for a simple web app
+name: my-first-chart
+description: A simple Helm chart for web app
 version: 0.1.0
 appVersion: "1.0"
 ```
 
-### 🔹 helm-chart/values.yaml
+
+**values.yaml**
+
 ```
-replicaCount: 1
+replicaCount: 2
 
 image:
-  repository: devstudent/web-app
+  repository: <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-first-chart
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -1211,62 +1119,142 @@ service:
   port: 80
 
 resources: {}
-
-nodeSelector: {}
-tolerations: []
-affinity: {}
 ```
 
-## 🔹 helm-chart/templates/deployment.yaml
+
+
+
+**templates/deployment.yaml**
 ```
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "web-app.fullname" . }}
+  name: {{ include "my-first-chart.fullname" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "web-app.name" . }}
+      app: {{ include "my-first-chart.name" . }}
   template:
     metadata:
       labels:
-        app: {{ include "web-app.name" . }}
+        app: {{ include "my-first-chart.name" . }}
     spec:
       containers:
-        - name: {{ .Chart.Name }}
+        - name: my-first-chart
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           ports:
             - containerPort: 80
 ```
 
-## 🔹 helm-chart/templates/service.yaml
+
+
+**templates/service.yaml**
 ```
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "web-app.fullname" . }}
+  name: {{ include "my-first-chart.fullname" . }}
 spec:
   type: {{ .Values.service.type }}
+  selector:
+    app: {{ include "my-first-chart.name" . }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: 80
-  selector:
-    app: {{ include "web-app.name" . }}
+```
+
+
+## Step 3: Deploying the App with Helm
+
+### Package and Deploy
+```
+helm install my-first-chart ./my-first-chart
+```
+
+### To upgrade:
+```
+helm upgrade my-first-chart ./my-first-chart
+```
+
+### To rollback:
+```
+helm rollback my-first-chart 1
 ```
 
 
 
+### To uninstall:
+```
+helm uninstall my-first-chart
+```
+
+
+
+
+## Step 4: Understanding Templates & Values
+
+**values.yaml**
+
+You can override anything from values.yaml at runtime:
+
+```
+helm install web-app ./web-app --set replicaCount=3
+```
+
+### Templating
+Files in **templates/** use Go templating:
+
+```
+image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+```
+
+
+## Step 5: Integrating Helm with Jenkins
+
++ **Goal**
+Automatically deploy the app to EKS using Helm from Jenkins when code is pushed.                                                                                     
+###   Verify Jenkins    Integration Inside Jenkins:
+
+```
+helm version
+aws eks list-clusters
+```
+
+
+## Add AWS Credentials in Jenkins
++ Go to: Jenkins > Manage Jenkins > Credentials
+
++ Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as Username/Password credentials
+
++ Give ID: aws-cred
+
+
 ### 🔹Run the Pipeline
 
-On Push to Github
++ On Push to Github
 
-Watch console output for stages:
++ Watch console output for stages:
 
 + Checkout
 
 + Build Docker image
 
-+ Push to DockerHub
++ Push to ECR
 
 + Deploy with Helm
+
+
+### Helm Values File Override in Jenkins
+
+**generate a values.yaml:**
+```
+cat <<EOF > temp-values.yaml
+image:
+  repository: $ECR_REPO
+  tag: latest
+replicaCount: 3
+EOF
+
+helm upgrade --install web-app ./helm/web-app -f temp-values.yaml
+```

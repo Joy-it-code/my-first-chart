@@ -3,16 +3,6 @@ variable "region" {
   type        = string
 }
 
-variable "vpc_id" {
-  description = "The VPC ID where resources are deployed"
-  type        = string
-}
-
-variable "subnet_ids" {
-  description = "Subnets for EKS and EC2"
-  type        = list(string)
-}
-
 variable "ami_id" {
   description = "AMI for Jenkins EC2"
   type        = string

@@ -1,58 +1,54 @@
-resource "aws_iam_role" "jenkins_ec2_role" {
-  name = "jenkins-ec2-role"
+# IAM role and policy for Jenkins EC2
+resource "aws_iam_role" "jenkins_role" {
+  name = var.jenkins_iam_role_name
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Action = "sts:AssumeRole"
+        Effect = "Allow",
         Principal = {
           Service = "ec2.amazonaws.com"
-        }
-        Effect = "Allow"
-        Sid    = ""
+        },
+        Action = "sts:AssumeRole"
       }
     ]
   })
 }
 
-resource "aws_iam_policy" "jenkins_policy" {
-  name        = "jenkins-ec2-policy"
-  description = "Policy to allow EKS, S3, and CloudWatch access"
+resource "aws_iam_role_policy" "jenkins_policy" {
+  name = var.jenkins_policy_name
+  role = aws_iam_role.jenkins_role.id
 
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow"
+        Effect = "Allow",
         Action = [
           "eks:DescribeCluster",
           "eks:ListClusters",
           "eks:DescribeNodegroup",
-          "eks:ListNodegroups",
-          "eks:DescribeFargateProfiles",
-          "eks:AccessKubernetesApi",
-          "eks:AssumeRoleForPodIdentity",
-          "eks:CreateFargateProfile",
-          "eks:DescribeIdentityProviderConfig",
-          "iam:PassRole",
-          "sts:GetCallerIdentity",
-          "cloudwatch:*",
-          "logs:*",
-          "s3:*"
-        ]
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "cloudwatch:*"
+        ],
         Resource = "*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_role_policy_attach" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_policy.arn
-}
-
 resource "aws_iam_instance_profile" "jenkins_instance_profile" {
-  name = "jenkins-instance-profile"
-  role = aws_iam_role.jenkins_ec2_role.name
+  name = var.jenkins_instance_profile_name
+  role = aws_iam_role.jenkins_role.name
 }

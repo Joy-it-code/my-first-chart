@@ -5,11 +5,11 @@ metadata:
   labels:
     {{- include "my-first-chart.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.port }}
+  type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: http
+      targetPort: 80
       protocol: TCP
       name: http
   selector:
-    {{- include "my-first-chart.selectorLabels" . | nindent 4 }}
+    {{- include "my-first-chart.name" . | nindent 4 }}

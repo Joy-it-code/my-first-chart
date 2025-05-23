@@ -8,7 +8,10 @@ output "ecr_repository_url" {
   value       = aws_ecr_repository.web_app_repo.repository_url
 }
 
-output "eks_cluster_name" {
-  description = "Name of the EKS cluster"
-  value       = module.eks.cluster_name
+output "cluster_name" {
+  value = module.eks.cluster_name
+}
+
+output "kubeconfig_command" {
+  value = "aws eks --region us-east-1 update-kubeconfig --name ${module.eks.cluster_name}"
 }

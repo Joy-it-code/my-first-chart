@@ -1,26 +1,42 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 4.0"
+    }
+  }
+
+  required_version = ">= 1.3.0"
+}
+
 provider "aws" {
   region = var.region
 }
 
-data "aws_eks_cluster" "cluster" {
-  name = module.eks.cluster_name
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.1.1"
+
+  name = "eks-vpc"
+  cidr = "10.0.0.0/16"
+
+  azs             = ["us-east-1a", "us-east-1b"]
+  public_subnets  = ["10.0.3.0/24", "10.0.4.0/24"]
+  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+
+  tags = {
+    Name        = "eks-vpc"
+    Environment = "dev"
+  }
 }
 
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_name
-}
-
-provider "kubernetes" {
-  host                   = data.aws_eks_cluster.cluster.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
-}
-
-# 1. Security Group for Jenkins EC2
 resource "aws_security_group" "jenkins_sg" {
   name        = "jenkins-sg"
   description = "Allow SSH, HTTP, and Jenkins access"
-  vpc_id      = var.vpc_id
+  vpc_id      = module.vpc.vpc_id
 
   ingress {
     from_port   = 22
@@ -55,37 +71,52 @@ resource "aws_security_group" "jenkins_sg" {
   }
 }
 
-# 2. Jenkins EC2 Instance
 resource "aws_instance" "jenkins_server" {
   ami                         = var.ami_id
   instance_type               = "t3.medium"
   iam_instance_profile        = aws_iam_instance_profile.jenkins_instance_profile.name
   key_name                    = var.key_name
   vpc_security_group_ids      = [aws_security_group.jenkins_sg.id]
-  subnet_id                   = var.subnet_ids[0]
+  subnet_id                   = module.vpc.public_subnets[0]
   associate_public_ip_address = true
 
   tags = {
     Name = "JenkinsServer"
   }
 
-  user_data = file("jenkins/install_jenkins.sh")
+user_data = file("jenkins/configure_jenkins.sh")
 }
 
-# 3. ECR Repository
 resource "aws_ecr_repository" "web_app_repo" {
   name = var.ecr_repository_name
 }
 
-# 4. EKS Cluster
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "18.31.2"
+  version = "19.15.3"
 
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
-  subnet_ids      = var.subnet_ids
-  vpc_id          = var.vpc_id
-  enable_irsa     = true
-}
 
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  cluster_enabled_log_types    = []
+  create_cloudwatch_log_group = false
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = true
+
+  eks_managed_node_groups = {
+    default = {
+      desired_size   = 2
+      max_size       = 3
+      min_size       = 1
+      instance_types = ["t3.medium"]
+    }
+  }
+
+  tags = {
+    Terraform   = "true"
+    Environment = "dev"
+  }
+}
