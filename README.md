@@ -1195,8 +1195,11 @@ docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
 ```
 
 
-
-
+### Verify after deploying:
+```
+kubectl get pods
+kubectl get svc
+```
 
 
 ## Step 3: Deploying the App with Helm
