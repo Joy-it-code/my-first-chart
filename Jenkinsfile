@@ -55,7 +55,6 @@ pipeline {
                           --set image.repository=$ECR_REPO \
                           --set image.tag=latest \
                           --history-max=2 \
-                          --release-storage configmaps
                     '''
                 }
             }
