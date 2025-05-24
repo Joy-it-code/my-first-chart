@@ -46,11 +46,12 @@ pipeline {
                         echo "Updating kubeconfig for EKS..."
                         aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME
 
-                        echo "Deploying with Helm..."
                         helm upgrade --install web-app . \
                             --namespace default \
                             --set image.repository=$ECR_REPO \
-                            --set image.tag=latest
+                            --set image.tag=latest \
+                            --history-max=2 \
+                            --storage-configmaps
                     '''
                 }
             }
