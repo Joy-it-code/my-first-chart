@@ -1188,11 +1188,7 @@ docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
 ```
 
 
-### Verify after deploying:
-```
-kubectl get pods
-kubectl get svc
-```
+
 ----
 
 
@@ -1202,6 +1198,13 @@ kubectl get svc
 ```
 helm install my-first-chart ./my-first-chart
 ```
+
+### Verify after deploying:
+```
+kubectl get pods
+kubectl get svc
+```
+
 
 ### To upgrade:
 ```
@@ -1247,8 +1250,9 @@ image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
 ## Step 5: Integrating Helm with Jenkins
 
 + **Goal**
-Automatically deploy the app to EKS using Helm from Jenkins when code is pushed.                                                                                     
-###   Verify Jenkins    Integration Inside Jenkins:
+Automatically deploy the app to EKS using Helm from Jenkins when code is pushed.        
+
+###   Verify Jenkins Integration Inside Jenkins:
 
 ```
 helm version
