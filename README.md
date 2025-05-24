@@ -681,9 +681,9 @@ pipeline {
     agent any
 
     environment {
-        AWS_REGION  = 'us-east-1'
-        ECR_REPO    = '<account-id>.dkr.ecr.us-east-1.amazonaws.com/web-app'
-        ECR_IMAGE   = "${ECR_REPO}:latest"
+        AWS_REGION   = 'us-east-1'
+        ECR_REPO     = '<account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp'
+        ECR_IMAGE    = "${ECR_REPO}:latest"
         CLUSTER_NAME = 'capstone-eks'
     }
 
@@ -694,18 +694,10 @@ pipeline {
     stages {
         stage('Build and Push to ECR') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'aws-cred', 
-                        usernameVariable: 'AWS_ACCESS_KEY_ID',
-                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                    )
-                ]) {
+                withAWS(credentials: 'aws-cred', region: "${AWS_REGION}") {
                     sh '''
-                        echo "Logging into AWS..."
-                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-                        aws configure set default.region $AWS_REGION
+                        echo "Checking AWS identity..."
+                        aws sts get-caller-identity
 
                         echo "Logging into Amazon ECR..."
                         aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
@@ -724,22 +716,11 @@ pipeline {
         }
 
         stage('Deploy with Helm to EKS') {
-            when {
-                branch 'main'
-            }
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'aws-cred',
-                        usernameVariable: 'AWS_ACCESS_KEY_ID',
-                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-                    )
-                ]) {
+                withAWS(credentials: 'aws-cred', region: "${AWS_REGION}") {
                     sh '''
-                        echo "Configuring AWS CLI for Helm..."
-                        aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-                        aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-                        aws configure set default.region $AWS_REGION
+                        echo "Checking AWS identity..."
+                        aws sts get-caller-identity
 
                         echo "Updating kubeconfig for EKS..."
                         aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME

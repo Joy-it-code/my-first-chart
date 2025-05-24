@@ -37,9 +37,6 @@ pipeline {
         }
 
         stage('Deploy with Helm to EKS') {
-            when {
-                branch 'main'
-            }
             steps {
                 withAWS(credentials: 'aws-cred', region: "${AWS_REGION}") {
                     sh '''
