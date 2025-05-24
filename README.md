@@ -1159,7 +1159,6 @@ spec:
 
 
 ### On The Instance Run:
-run
 ```
 nano Dockerfile
 ```
