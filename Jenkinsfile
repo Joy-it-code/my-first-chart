@@ -48,9 +48,8 @@ pipeline {
 
                         echo "Deploying with Helm..."
                         helm upgrade --install web-app . --namespace default \
-                            --namespace default \
                             --set image.repository=586794450782.dkr.ecr.us-east-1.amazonaws.com/my-webapp \
-                            --set image.tag=latest
+                            --set image.tag=latest \
                             --storage configmap
                     '''
                 }
