@@ -35,13 +35,6 @@ pipeline {
                 }
             }
         }
-        
-        stage('Debug Helm Chart Files') {
-            steps {
-                sh 'ls -l ./helm'
-                sh 'ls -l ./helm/web-app'
-            }
-        }
 
         stage('Deploy with Helm to EKS') {
             steps {
@@ -54,7 +47,7 @@ pipeline {
                         aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME
 
                         echo "Deploying with Helm..."
-                        helm upgrade --install web-app . \
+                        helm upgrade --install web-app ./helm/web-app \
                             --namespace default \
                             --set image.repository=$ECR_REPO \
                             --set image.tag=latest
