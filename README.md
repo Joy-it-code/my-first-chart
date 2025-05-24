@@ -1257,6 +1257,7 @@ Automatically deploy the app to EKS using Helm from Jenkins when code is pushed.
 ```
 helm version
 aws eks list-clusters
+helm list --all --namespace default
 ```
 
 
