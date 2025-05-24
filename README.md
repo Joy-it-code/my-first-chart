@@ -849,7 +849,7 @@ kubectl get svc
 ```
 
 
-## Step 2: Open Jenkins Dashboard
+## Open Jenkins Dashboard
 
 + Verify Installation on Jenkins EC2:
 ```
@@ -1193,6 +1193,7 @@ docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
 kubectl get pods
 kubectl get svc
 ```
+----
 
 
 ## Step 3: Deploying the App with Helm
@@ -1220,6 +1221,7 @@ helm uninstall my-first-chart
 ```
 
 
+----
 
 
 ## Step 4: Understanding Templates & Values
@@ -1238,6 +1240,8 @@ Files in **templates/** use Go templating:
 ```
 image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
 ```
+
+----
 
 
 ## Step 5: Integrating Helm with Jenkins
