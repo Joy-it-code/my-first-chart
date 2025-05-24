@@ -47,7 +47,7 @@ pipeline {
                         aws eks --region $AWS_REGION update-kubeconfig --name $CLUSTER_NAME
 
                         echo "Deploying with Helm..."
-                        helm upgrade --install my-first-chart ./ \
+                        helm upgrade --install web-app ./helm/web-app \
                             --namespace default \
                             --set image.repository=$ECR_REPO \
                             --set image.tag=latest
