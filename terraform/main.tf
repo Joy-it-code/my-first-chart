@@ -104,7 +104,7 @@ module "eks" {
   cluster_enabled_log_types     = []
   create_cloudwatch_log_group   = false
   cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
+  cluster_endpoint_private_access = false
   cluster_endpoint_public_access_cidrs = ["98.84.167.116/32"]
   
   manage_aws_auth_configmap = false
