@@ -487,16 +487,27 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.15.3"
 
-  cluster_name    = var.cluster_name
+  cluster_name    =  "capstone-eks"
   cluster_version = var.cluster_version
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_enabled_log_types    = []
-  create_cloudwatch_log_group = false
+  cluster_enabled_log_types     = []
+  create_cloudwatch_log_group   = false
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
+  cluster_endpoint_public_access_cidrs = ["EC2-IP/32"]
+  
+  manage_aws_auth_configmap = false
+
+  aws_auth_roles = [
+    {
+      rolearn  = aws_iam_role.jenkins_role.arn
+      username = "jenkins"
+      groups   = ["system:masters"]
+    }
+  ]
 
   eks_managed_node_groups = {
     default = {
