@@ -914,6 +914,8 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 + AWS Credentials
 
++ AWS Steps Plugin"
+
 + Credentials Binding Plugin (for secure credentials management)
 ![](./img/3e.installation.png)
 ![](./img/3f.installatn2.png)
@@ -1269,7 +1271,7 @@ aws eks list-clusters
 
 ### 🔹Run the Pipeline
 
-+ On Push to Github
++ On every Push to Github
 
 + Watch console output for stages:
 
