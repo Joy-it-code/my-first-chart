@@ -1,0 +1,64 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_REGION    = 'us-east-1'
+    ECR_ACCOUNT   = '586794450782'
+    ECR_REPO      = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/my-webapp"
+    IMAGE_TAG     = 'latest'
+    CLUSTER_NAME  = 'my-eks-cluster'
+    HELM_RELEASE  = 'webapp'
+    HELM_CHART    = './helm/webapp'
+  }
+
+  triggers {
+    githubPush()
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git 'https://github.com/Joy-it-code/my-first-chart.git'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        sh "docker build -t $ECR_REPO:$IMAGE_TAG ."
+      }
+    }
+
+    stage('Login & Push to ECR') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-credentials',
+                                          usernameVariable: 'AWS_ACCESS_KEY_ID',
+                                          passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          sh '''
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+            aws configure set region $AWS_REGION
+            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com
+            docker push $ECR_REPO:$IMAGE_TAG
+          '''
+        }
+      }
+    }
+
+    stage('Deploy with Helm to EKS') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'aws-credentials',
+                                          usernameVariable: 'AWS_ACCESS_KEY_ID',
+                                          passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+          sh '''
+            export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+            export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+            aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+            helm upgrade --install $HELM_RELEASE $HELM_CHART \
+              --set image.repository=$ECR_REPO \
+              --set image.tag=$IMAGE_TAG
+          '''
+        }
+      }
+    }
+  }
+}

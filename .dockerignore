@@ -1,0 +1,7 @@
+*.tar
+*.zip
+*.log
+node_modules
+.vscode
+.git
+*.lz4
