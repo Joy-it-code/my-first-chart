@@ -591,7 +591,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        git 'https://github.com/username/my-first-chart.git'
+        git branch: 'main', url: 'https://github.com/Joy-it-code/my-first-chart.git''
       }
     }
 
