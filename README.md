@@ -1263,7 +1263,7 @@ helm lint .
 **Run**
 ```
 helm upgrade web-app ./helm/webapp \
-  --set image.repository=586794450782.dkr.ecr.us-east-1.amazonaws.com/my-webapp \
+  --set image.repository=<account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp \
   --set image.tag=v3
 ```
 ![](./img/7b.upgrade.png)
