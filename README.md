@@ -937,8 +937,7 @@ http://your-jenkins-server/github-webhook/
 
 
 
-
-
+----
 ## Step 2: What are Helm and Helm Chart?
 
 ### What is Helm?
@@ -1230,7 +1229,6 @@ docker tag web-app:latest <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:l
 docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest 
 ```
 
-
 ----
 
 
@@ -1380,9 +1378,10 @@ image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
 ## Step 5: Integrating Helm with Jenkins
 
 + **Goal**
+
 Automatically deploy the app to EKS using Helm from Jenkins when code is pushed.        
 
-###   Verify Jenkins Integration Inside Jenkins:
+### Verify Jenkins Integration Inside Jenkins:
 
 ```
 aws eks list-clusters
