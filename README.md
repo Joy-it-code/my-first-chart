@@ -591,13 +591,13 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        git branch: 'main', url: 'https://github.com/Joy-it-code/my-first-chart.git''
+        git branch: 'main', url: 'https://github.com/username/repo-url.git''
       }
     }
 
     stage('Build Docker Image') {
       steps {
-        sh "docker build -t $ECR_REPO:$IMAGE_TAG ."
+        sh 'docker build -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest my-app'
       }
     }
 
