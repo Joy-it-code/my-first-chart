@@ -1003,7 +1003,7 @@ rmdir my-app/helm/charts 2>/dev/null
 
 ## Edit the Chart and Update the Following
 
-**Chart.yaml**
+**Helm Chart: Chart.yaml**
 ```
 apiVersion: v2
 name: my-first-chart
@@ -1209,6 +1209,8 @@ image:
  docker tag <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
 docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
 ```
+
+
 
 
 
