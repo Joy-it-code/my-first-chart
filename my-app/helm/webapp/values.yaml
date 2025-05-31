@@ -4,7 +4,7 @@ replicaCount: 3
 
 image:
   repository: 586794450782.dkr.ecr.us-east-1.amazonaws.com/my-webapp
-  tag: v3
+  tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

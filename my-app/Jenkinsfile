@@ -24,7 +24,7 @@ pipeline {
 
     stage('Build Docker Image') {
       steps {
-        sh 'docker build -t 586794450782.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest my-app'
+        sh 'docker build -t $ECR_REPO:$IMAGE_TAG my-app'
       }
     }
 
@@ -54,8 +54,7 @@ pipeline {
             export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
             aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
             helm upgrade --install $HELM_RELEASE $HELM_CHART \
-              --set image.repository=$ECR_REPO \
-              --set image.tag=$IMAGE_TAG
+              --namespace default
           '''
         }
       }
