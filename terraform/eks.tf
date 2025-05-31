@@ -13,6 +13,10 @@ module "eks" {
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
 
+    cluster_endpoint_public_access_cidrs = [
+    "44.192.37.250/32"  
+  ]
+
   eks_managed_node_groups = {
     default = {
       desired_size   = 2
