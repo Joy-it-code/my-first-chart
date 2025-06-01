@@ -56,7 +56,6 @@ This project demonstrates how to build, package, and deploy a containerized web 
 ```
 MY-FIRST-CHART/
 │
-├── img/
 ├── jenkins-ami/
 │   ├── packer.pkr.hcl
 │   └── setup.sh
@@ -366,6 +365,7 @@ resource "aws_instance" "jenkins" {
   associate_public_ip_address = true
   key_name                    = "main-key"
   user_data                   = file("jenkins/configure_jenkins.sh")
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_eks_ecr_instance_profile.name
 
   tags = {
     Name = "Jenkins-Server"
@@ -428,23 +428,25 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.15.3"
 
-  cluster_name    = "my-eks-cluster"
+  cluster_name    = "jenkins-eks-cluster"
   cluster_version = "1.29"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_enabled_log_types    = []
+  cluster_endpoint_public_access       = true
+  cluster_endpoint_private_access      = true
+  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]  
+
   create_cloudwatch_log_group = false
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
+  cluster_enabled_log_types   = []
 
   eks_managed_node_groups = {
     default = {
-      desired_size   = 2
-      max_size       = 3
-      min_size       = 1
       instance_types = ["t3.medium"]
+      min_size       = 1
+      max_size       = 2
+      desired_size   = 1
     }
   }
 
@@ -452,6 +454,39 @@ module "eks" {
     Terraform   = "true"
     Environment = "dev"
   }
+}
+
+data "aws_eks_cluster" "cluster" {
+  name = module.eks.cluster_name
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = module.eks.cluster_name
+}
+
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+resource "kubernetes_config_map" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    mapRoles = yamlencode([
+      {
+        rolearn  = "arn:aws:iam::<account-id>:role/jenkins-eks-ecr-role"  # Replace with your actual role
+        username = "jenkins"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+
+  depends_on = [module.eks]
 }
 ```
 
@@ -463,21 +498,21 @@ touch vpc
 ```
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.1.1" 
+  version = "5.1.1"
 
-  name = "capstone-vpc"
-  cidr = "10.0.0.0/16"
+  name = "jenkins-eks-vpc"
+  cidr = "10.101.0.0/16"  
 
   azs             = ["us-east-1a", "us-east-1b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.3.0/24", "10.0.4.0/24"]
+  private_subnets = ["10.101.1.0/24", "10.101.2.0/24"]
+  public_subnets  = ["10.101.3.0/24", "10.101.4.0/24"]
 
-  enable_nat_gateway = true
-  single_nat_gateway = true
   enable_dns_hostnames = true
+  enable_nat_gateway   = true
+  single_nat_gateway   = true
 
   tags = {
-    Name        = "capstone-vpc"
+    Name        = "jenkins-eks-vpc"
     Environment = "dev"
   }
 }
@@ -521,50 +556,69 @@ provider "aws" {
 touch variable.tf
 ```
 variable "region" {
-  default = "us-east-1"
+  description = "The AWS region to deploy resources in"
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "vpc_cidr_block" {
-  default = "10.0.0.0/16"
+  description = "CIDR block for the VPC"
+  type        = string
+  default     = "10.101.0.0/16"  
 }
 
 variable "instance_type" {
-  default = "t2.medium"
+  description = "EC2 instance type for Jenkins"
+  type        = string
+  default     = "t2.medium"
 }
 
 variable "key_name" {
-  default = "your-key-pair"
+  description = "Name of the existing EC2 Key Pair to use for SSH"
+  type        = string
+  default     = "main-key"
+}
+```
+
+### terraform/iam.tf
+```
+resource "aws_iam_role" "jenkins_eks_ecr_role" {
+  name = "jenkins-eks-ecr-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_access" {
+  role       = aws_iam_role.jenkins_eks_ecr_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_access" {
+  role       = aws_iam_role.jenkins_eks_ecr_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_worker_access" {
+  role       = aws_iam_role.jenkins_eks_ecr_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}
+
+resource "aws_iam_instance_profile" "jenkins_eks_ecr_instance_profile" {
+  name = "jenkins-eks-ecr-instance-profile"
+  role = aws_iam_role.jenkins_eks_ecr_role.name
 }
 ```
 
 ----
-
-
-### Ensure the AWS IAM user (or role) has these permissions:
-
-+ Attach this policy:
-
-**Paste**
-```
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:PutImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:DescribeRepositories"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
 
 
 ## Create Jenkinsfile
@@ -579,7 +633,7 @@ pipeline {
     ECR_ACCOUNT   = '<account-id>'
     ECR_REPO      = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/my-webapp"
     IMAGE_TAG     = 'latest'
-    CLUSTER_NAME  = 'my-eks-cluster'
+    CLUSTER_NAME  = 'jenkins-eks-cluster'
     HELM_RELEASE  = 'webapp'
     HELM_CHART    = './helm/webapp'
   }
@@ -597,7 +651,7 @@ pipeline {
 
     stage('Build Docker Image') {
       steps {
-        sh 'docker build -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest my-app'
+        sh 'docker build -t $ECR_REPO:$IMAGE_TAG my-app'
       }
     }
 
@@ -627,6 +681,7 @@ pipeline {
             export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
             aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
             helm upgrade --install $HELM_RELEASE $HELM_CHART \
+              --namespace default
               --set image.repository=$ECR_REPO \
               --set image.tag=$IMAGE_TAG
           '''
@@ -667,18 +722,10 @@ node_modules
 *.lz4
 ```
 
-### Create Jenkinsfile
-```
-nano jenkinsfile
-```
 
-paste
-```
 
-```
+### Create configure_Jenkins.sh file 
 
-### Create Jenkins file and directory 
-terraform/ec2.tf/jenkins/configure.sh
 ```
 touch jenkins/configure_jenkins.sh
 ```
@@ -824,7 +871,7 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 + AWS Credentials
 
-+ AWS Steps Plugin"
++ AWS Steps Plugin
 
 + Credentials Binding Plugin (for secure credentials management)
 ![](./img/3e.installation.png)
@@ -944,11 +991,6 @@ http://your-jenkins-server/github-webhook/
 Helm is a package manager for Kubernetes, like apt for Ubuntu or yum for CentOS. Helm lets you define, install, and upgrade Kubernetes applications using charts.
 
 
-
-### What is a Helm Chart?
-A Helm chart is a collection of YAML templates that describe a set of Kubernetes resources.
-
-
 ### Why Use Helm Charts?
 
 + It Simplifies deployment with one command: 
@@ -962,7 +1004,6 @@ helm version
 + Supports configuration with values files
 
 + Manages app lifecycle (upgrade, rollback, uninstall)                                                                                  
-
 
 
 ### Create a folder for all the app
@@ -1116,6 +1157,10 @@ nano public/index.html
 
 ## Build and Push Docker Image to ECR on EC2 Instance
 
+### Docker + ECR Setup 
+
++ Use docker to build the web app image and push it to AWS ECR.
+
 **Authenticate Docker to AWS ECR**
 ```
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
@@ -1126,15 +1171,11 @@ docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
 
 
 
-## Docker + ECR Setup 
-+ Docker is used to build the web app image and push it to AWS ECR.
-
-
 ### Update Your kubeconfig for EKS On Terminal
 
-Connect your local kubectl to your EKS cluster:
++ Connect your local kubectl to your EKS cluster:
 ```
-aws eks --region us-east-1 update-kubeconfig --name capstone-cluster
+aws eks --region us-east-1 update-kubeconfig --name eks-cluster
 ```
 
 
@@ -1156,7 +1197,7 @@ helm upgrade --install web-app ./helm/webapp \
 --set image.tag=latest
 ```
 
-## Verify Deployment
+### Verify Deployment
 ```
 kubectl get svc -w
 ```
@@ -1170,9 +1211,11 @@ kubectl get svc -w
 ### a. Get All Kubernetes Resources
 ```
 kubectl get all
+helm list
+kubectl get nodes
 ```
 
-### b. Get LoadBalancer External IP
+### b. Get LoadBalancer IP
 ```
 kubectl get svc
 ```
@@ -1192,77 +1235,44 @@ http://<LoadBalancer-DNS>
 ![](./img/7a.deployment1.png)
 
 
+----
 
-### Upgrade helm
 
-+ **Update values.yaml**
+
+
+
+##  Deploying the App with Helm
+
+### Package and Deploy
+```
+cd my-app/
+```
+
++ **Validate Chart**
+```
+helm lint .
+```
+
+
+## Helm Upgrade
+
+### Update your values.yaml
 ```
 image:
   repository: <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp
-  tag: latest         
+  tag: v3         
   pullPolicy: IfNotPresent
 ```
 
-+ **Rebuild docker image and push**
-**run**
++ Rebuild docker image and push
+
 ```
  docker tag <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
 docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp:latest
 ```
 
+### Deploy New Image With Helm
 
-
-
-
-### Use Helm Chart in Jenkins Pipeline
-On Jenkinsfile :
-
-+ Log into AWS ECR
-
-+ Builds and pushes image
-
-+ Runs Helm upgrade
-
-
-```
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account_id>.dkr.ecr.us-east-1.amazonaws.com
-docker build -t web-app .
-docker tag web-app:latest <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest
-docker push <account_id>.dkr.ecr.us-east-1.amazonaws.com/web-app:latest 
-```
-
-----
-
-
-
-## Test Web App via EKS LoadBalancer DNS
-### On Terminal:
-**Run**
-```
-aws eks update-kubeconfig --region us-east-1 --name capstone-eks
-helm list
-kubectl get nodes
-kubectl get svc
-```
-
-
-
-## Step 3: Deploying the App with Helm
-
-### Package and Deploy
-
-+ ## upgrade Helm
-```
-cd my-app/
-```
-
-+ **Validate your chart**
-**Run:**
-```
-helm lint .
-```
-
-**Run**
 ```
 helm upgrade web-app ./helm/webapp \
   --set image.repository=<account-id>.dkr.ecr.us-east-1.amazonaws.com/my-webapp \

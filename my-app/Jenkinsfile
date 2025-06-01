@@ -6,7 +6,7 @@ pipeline {
     ECR_ACCOUNT   = '586794450782'
     ECR_REPO      = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/my-webapp"
     IMAGE_TAG     = 'latest'
-    CLUSTER_NAME  = 'my-eks-cluster'
+    CLUSTER_NAME  = 'jenkins-eks-cluster'
     HELM_RELEASE  = 'webapp'
     HELM_CHART    = './helm/webapp'
   }
@@ -55,6 +55,8 @@ pipeline {
             aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
             helm upgrade --install $HELM_RELEASE $HELM_CHART \
               --namespace default
+              --set image.repository=$ECR_REPO \
+              --set image.tag=$IMAGE_TAG
           '''
         }
       }

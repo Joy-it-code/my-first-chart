@@ -17,6 +17,7 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "webapp.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: web
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
